@@ -207,7 +207,7 @@ def extract_llm_hidden_states(
             for step_offset in range(min(actual_gen_len_k, num_hs_steps_available_for_gen_tokens)):
                 # step_offset 0 is the 1st generated token, HS index in outputs.hidden_states is step_offset + 1
                 hs_tensor_for_step = outputs.hidden_states[step_offset][-1] # Last layer, shape (batch_size, 1, hidden_dim)
-                token_hs = hs_tensor_for_step[k, 0, :].detach().cpu().numpy() # Get for sequence k, squeeze the token dim
+                token_hs = hs_tensor_for_step[k, -1, :].detach().cpu().numpy() # Get for sequence k, squeeze the token dim
                 gen_k_output_hs_for_actual_tokens.append(token_hs)
             
             if gen_k_output_hs_for_actual_tokens:
@@ -381,7 +381,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate responses and extract hidden states from language models")
     parser.add_argument("--model", type=str, default="deepseek-ai/DeepSeek-R1-Distill-Llama-8B", 
                         help="HuggingFace model name or path")
-    parser.add_argument("--max_new_tokens", type=int, default=1024, 
+    parser.add_argument("--max_new_tokens", type=int, default=8, 
                         help="Maximum number of new tokens to generate")
     parser.add_argument("--dataset", type=str, default="math500",
                         help="Dataset to use (e.g. 'math500', 'gsm8k')")
