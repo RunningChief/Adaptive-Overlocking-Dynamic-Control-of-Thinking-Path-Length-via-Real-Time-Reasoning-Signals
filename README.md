@@ -86,18 +86,8 @@ After training the TPV regressor, you can use it to intervene in the generation 
 This script uses the trained TPV regressor to modify the hidden states during the language model generation process.
 
 ```bash
-python tpv_intervention.py \
-  --model_name_or_path "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B" \
-  --intervention_vector_path "qwen_math_tpv_model/tpv_linear_weights.npy" \
-  --dataset "math500" \
-  --output_generations_dir "qwen_intervention_responses" \
-  --task_name "math500" \
-  --problem_start_idx 30 \
-  --problem_end_idx 35 \
-  --alpha 100.0 \
-  --max_new_tokens 2048 \
-  --device "cuda" \
-  --torch_dtype "float16"
+CUDA_VISIBLE_DEVICES=4 nohup python CG-aIS.py --model_name_or_path "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B" --intervention_vector_path "qwen_math_tpv_model/tpv_linear_weights.npy" --dataset "math500" --output_generations_dir "test_1024_original" --task_name "k_50" --problem_start_idx 80 --problem_end_idx 500 --alpha 100.0 --max_new_tokens 1024 --device "cuda" --torch_dtype "float16" --alpha_max 150 --uaas_k 50 --uaas_threshold 0.02 > K_50_1024.log 2>&1 &
+
 ```
 
 This will apply the trained intervention vector to the model's generation process with the specified alpha scale factor, and save the results in the `llama_intervention_responses` directory.

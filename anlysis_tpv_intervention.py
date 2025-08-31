@@ -178,8 +178,15 @@ def analyze_results(results_dir, dataset_name=None, starting_index=None, end_ind
 
     for i, problem_dir in enumerate(problem_dirs):
         problem_num = i
-        
-        response_file = problem_dir / f"response_alpha_{alpha_value}.txt"
+
+        response_files = sorted(problem_dir.glob("response_alpha_*.txt"))
+
+        if not response_files:
+            logging.warning(f"问题 {problem_num} (目录 {problem_dir.name}) 没有找到任何 response_alpha 文件")
+            continue
+
+        # 如果只分析一个，取最后一个（通常是最大的 alpha）
+        response_file = response_files[-1]
         
         if not response_file.exists():
             logging.warning(f"问题 {problem_num} (目录 {problem_dir.name}) 的响应文件不存在: {response_file}")
@@ -276,9 +283,9 @@ def save_detailed_results(results, output_file):
 
 def main():
     parser = argparse.ArgumentParser(description="分析TPV intervention结果")
-    parser.add_argument("--results_dir", type=str, default="./deepseek_intervention_responses/DeepSeek-R1-Distill-Qwen-32B/math500/intervention", help="结果目录路径")
+    parser.add_argument("--results_dir", type=str, default="/home/aiseon/TPV/test_1024_original/DeepSeek-R1-Distill-Qwen-32B/k_50/intervention", help="结果目录路径")
     parser.add_argument("--dataset", type=str, choices=["math500", "gsm8k"], default="math500", help="数据集名称")
-    parser.add_argument("--starting_index", type=int, default=30, help="起始索引")
+    parser.add_argument("--starting_index", type=int, default=80, help="起始索引")
     parser.add_argument("--end_index", type=int, default=500, help="结束索引")
     parser.add_argument("--alpha", type=float, default=100.0, help="要分析的alpha值")
     parser.add_argument("--output_json", type=str, default="tpv_analysis_results.json", help="输出详细结果的JSON文件")
