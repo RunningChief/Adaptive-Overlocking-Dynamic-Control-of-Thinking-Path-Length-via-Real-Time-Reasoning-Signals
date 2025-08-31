@@ -159,146 +159,102 @@ def generate_with_uaas_intervention(
     enable_uaas=True
 ):
     """
-    使用UA-aS方法生成tokens，根据每个token的不确定性动态调整intervention强度
+    使用UA-aS方法高效生成tokens，手动管理KV缓存，避免重复计算。
     """
     inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
-    input_token_count = inputs.input_ids.size(-1)
+    input_ids = inputs.input_ids
+    input_token_count = input_ids.size(1)
     vocab_size = model.config.vocab_size
-    
-    # 存储生成的token和对应的alpha值（用于分析）
+
     generated_tokens = []
     alpha_values = []
     uncertainty_values = []
     
-    current_input_ids = inputs.input_ids.clone()
+    past_key_values = None
     
+    # 确保模型处于评估模式
+    model.eval()
+
+    # 初始前向传播，获取第一个logits和KV缓存
+    with torch.no_grad():
+        outputs = model(input_ids, use_cache=True, return_dict=True)
+        logits = outputs.logits[:, -1, :]
+        past_key_values = outputs.past_key_values
+
     for step in range(max_new_tokens):
         hook_handles = []
-        current_alpha = alpha_base  # 默认alpha值
+        current_alpha = alpha_base
         
-        # 如果启用UA-aS，需要先获取模型输出来计算不确定性
+        # 1. 根据上一步的logits计算当前token的alpha
         if enable_uaas and intervention_vector is not None:
-            # 使用单独的前向传播来获取logits，避免与generate()冲突
-            with torch.no_grad():
-                # 确保模型处于evaluation模式
-                model.eval()
-                
-                # 单次前向传播获取logits
-                model_outputs = model(
-                    input_ids=current_input_ids,
-                    attention_mask=None,
-                    use_cache=False,  # 关闭cache避免冲突
-                    return_dict=True
-                )
-                
-                # 获取最后一个位置的logits
-                last_logits = model_outputs.logits[:, -1, :].clone()  # [1, vocab_size]
-                
-                # 确保logits是float32以提高数值稳定性
-                if last_logits.dtype == torch.float16:
-                    last_logits = last_logits.float()
-                
-                # 计算归一化熵
-                uncertainty = compute_token_entropy(last_logits, vocab_size)
-                
-                # 检查数值稳定性
-                if torch.isnan(uncertainty) or torch.isinf(uncertainty):
-                    logging.warning(f"Invalid uncertainty value: {uncertainty.item()}, using default alpha_base")
-                    current_alpha = alpha_base
-                    uncertainty_val = 0.5  # 默认值
-                else:
-                    # 确保uncertainty是标量tensor
-                    if uncertainty.dim() > 0:
-                        uncertainty = uncertainty.item()
-                    else:
-                        uncertainty = uncertainty.item()
-                    
-                    # 计算动态alpha (转换为Python float进行计算)
-                    sigmoid_val = math.exp(k * (uncertainty - u_threshold)) / (1 + math.exp(k * (uncertainty - u_threshold)))
-                    current_alpha = alpha_base + (alpha_max - alpha_base) * (1 - sigmoid_val)
-                    
-                    # 检查alpha数值稳定性
-                    if math.isnan(current_alpha) or math.isinf(current_alpha):
-                        logging.warning(f"Invalid alpha value computed: {current_alpha}, using alpha_base")
-                        current_alpha = alpha_base
-                    
-                    uncertainty_val = uncertainty
-                
-                uncertainty_values.append(uncertainty_val)
-                alpha_values.append(current_alpha)
-                
-                # 添加debug信息
-                if step < 5:  # 只记录前几个token的详细信息
-                    logging.info(f"Token {step}: uncertainty={uncertainty_val:.4f}, alpha={current_alpha:.2f}")
-        
-        # 使用工厂函数修复闭包问题
+            # 确保logits是float32以提高数值稳定性
+            stable_logits = logits.float() if logits.dtype == torch.float16 else logits
+            
+            uncertainty = compute_token_entropy(stable_logits, vocab_size)
+            uncertainty_val = uncertainty.item()
+
+            if math.isnan(uncertainty_val) or math.isinf(uncertainty_val):
+                logging.warning(f"Invalid uncertainty value: {uncertainty_val}, using default alpha_base")
+                current_alpha = alpha_base
+                uncertainty_val = 0.5
+            else:
+                sigmoid_val = 1 / (1 + math.exp(-k * (uncertainty_val - u_threshold)))
+                current_alpha = alpha_base + (alpha_max - alpha_base) * (1 - sigmoid_val)
+
+            uncertainty_values.append(uncertainty_val)
+            alpha_values.append(current_alpha)
+            
+            if step < 5:
+                logging.info(f"Token {step}: uncertainty={uncertainty_val:.4f}, alpha={current_alpha:.2f}")
+
+        # 2. 从上一步的logits中选择下一个token
+        next_token_id = torch.argmax(logits, dim=-1).unsqueeze(-1)
+
+        # 记录生成的token
+        generated_tokens.append(next_token_id.item())
+        input_ids = torch.cat([input_ids, next_token_id], dim=-1)
+
+        # 检查是否生成了结束token
+        if next_token_id.item() == tokenizer.eos_token_id:
+            break
+
+        # 3. 为下一步的前向传播设置hook
         def make_hook(alpha_val):
             def forward_hook(module, input_args, output):
-                original_output = output
-                if isinstance(output, tuple):
-                    hidden_states_to_modify = output[0]
-                elif isinstance(output, torch.Tensor):
-                    hidden_states_to_modify = output
-                else:
-                    logging.warning(f"Unexpected output type from hooked layer: {type(output)}")
-                    return output
-
+                hidden_states_to_modify = output[0] if isinstance(output, tuple) else output
+                reshaped_vector = intervention_vector.view(1, 1, -1).to(hidden_states_to_modify.device)
                 modified_states = hidden_states_to_modify.clone()
-                reshaped_vector = intervention_vector.view(1, 1, -1).to(modified_states.device)
-                modified_states[:, -1:, :] = modified_states[:, -1:, :] + reshaped_vector * alpha_val
-
-                if isinstance(original_output, tuple):
-                    return (modified_states,) + original_output[1:]
-                else:
-                    return modified_states
+                modified_states[:, -1:, :] += reshaped_vector * alpha_val
+                return (modified_states,) + output[1:] if isinstance(output, tuple) else modified_states
             return forward_hook
         
-        # 创建hook函数
-        forward_hook = make_hook(current_alpha)
-
-        # 注册hook
-        target_intervention_module = model.model.norm
         if intervention_vector is not None:
+            target_intervention_module = model.model.norm
+            forward_hook = make_hook(current_alpha)
             hook_handles.append(target_intervention_module.register_forward_hook(forward_hook))
 
+        # 4. 执行单步前向传播，传入新的token和过去的KV缓存
         try:
             with torch.no_grad():
-                # 生成下一个token
-                outputs = model.generate(
-                    current_input_ids,
-                    max_new_tokens=1,
-                    do_sample=False,
-                    num_beams=1,
-                    use_cache=False,  # 关闭cache避免问题
-                    pad_token_id=tokenizer.pad_token_id or tokenizer.eos_token_id,
+                # 注意：这里只传入最后一个token，并附带past_key_values
+                outputs = model(
+                    input_ids=next_token_id, 
+                    past_key_values=past_key_values, 
+                    use_cache=True, 
+                    return_dict=True
                 )
-                
-                # 获取新生成的token
-                if outputs.size(1) > current_input_ids.size(1):
-                    new_token_id = outputs[0, -1].item()
-                    generated_tokens.append(new_token_id)
-                    
-                    # 更新输入序列
-                    current_input_ids = outputs
-                    
-                    # 检查是否生成了结束token
-                    if new_token_id == tokenizer.eos_token_id:
-                        break
-                else:
-                    # 没有生成新token，跳出循环
-                    break
-                    
+                logits = outputs.logits[:, -1, :]
+                past_key_values = outputs.past_key_values
         finally:
             for h in hook_handles:
                 h.remove()
-    
-    # 解码最终结果
-    result = tokenizer.decode(current_input_ids[0], skip_special_tokens=True)
+
+    # 解码和日志记录部分与你原来的函数保持一致
+    result = tokenizer.decode(input_ids[0], skip_special_tokens=True)
     new_token_count = len(generated_tokens)
     
-    # 记录统计信息
+    # (此处省略与你原代码相同的日志记录部分，可以直接复制过来)
     if enable_uaas and alpha_values and len(alpha_values) > 0:
-        # 过滤掉无效值
         valid_alphas = [a for a in alpha_values if not (math.isnan(a) or math.isinf(a))]
         valid_uncertainties = [u for u in uncertainty_values if not (math.isnan(u) or math.isinf(u))]
         
@@ -309,16 +265,12 @@ def generate_with_uaas_intervention(
                 f"UA-aS Stats - avg_alpha: {avg_alpha:.2f}, avg_uncertainty: {avg_uncertainty:.4f}, "
                 f"alpha_range: [{min(valid_alphas):.2f}, {max(valid_alphas):.2f}]"
             )
-        else:
-            logging.warning("UA-aS Stats - All computed values were invalid (NaN/Inf)")
-    elif enable_uaas:
-        logging.warning("UA-aS Stats - No valid alpha values computed")
     
     logging.info(
         f"Token usage - prompt_tokens: {input_token_count}, "
-        f"generated_tokens: {new_token_count}, total_tokens: {current_input_ids.size(-1)}"
+        f"generated_tokens: {new_token_count}, total_tokens: {input_ids.size(-1)}"
     )
-    
+
     return result, new_token_count
 
 
