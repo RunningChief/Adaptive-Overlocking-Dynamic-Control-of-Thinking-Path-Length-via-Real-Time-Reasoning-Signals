@@ -21,10 +21,11 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 def find_closest_alpha_file(problem_dir: Path, target_alpha: float):
     """
-    在 problem_dir 中查找与 target_alpha 最接近的 response_alpha 文件
+    在 problem_dir 中查找与 target_alpha 最接近的 response_alpha 或 response_uaas_alpha_base_* 文件
     返回 Path 或 None
     """
-    files = list(problem_dir.glob("response_alpha_*.txt"))
+    # 支持两种文件名模式
+    files = list(problem_dir.glob("response_alpha_*.txt")) + list(problem_dir.glob("response_uaas_alpha_base_*.txt"))
     if not files:
         return None
 
@@ -32,7 +33,10 @@ def find_closest_alpha_file(problem_dir: Path, target_alpha: float):
     min_diff = float('inf')
 
     for f in files:
+        # 匹配两种模式
         match = re.search(r'response_alpha_([0-9.]+)\.txt', f.name)
+        if not match:
+            match = re.search(r'response_uaas_alpha_base_([0-9.]+)\.txt', f.name)
         if match:
             try:
                 alpha_val = float(match.group(1))
