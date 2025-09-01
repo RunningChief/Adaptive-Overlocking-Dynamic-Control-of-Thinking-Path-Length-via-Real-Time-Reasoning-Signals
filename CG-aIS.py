@@ -435,7 +435,7 @@ def main():
     parser.add_argument("--alpha", type=float, default=50, help="initial alpha")
     
     # UA-aS 相关参数
-    parser.add_argument("--enable_uaas", action="store_true", help="Enable Uncertainty-Aware adaptive Strength (UA-aS)")
+    parser.add_argument("--enable_uaas", action="store_true", default=True, help="Enable Uncertainty-Aware adaptive Strength (UA-aS)")
     parser.add_argument("--alpha_max", type=float, default=200.0, help="Maximum alpha value for UA-aS")
     parser.add_argument("--uaas_k", type=float, default=100.0, help="Steepness parameter k for sigmoid function")
     parser.add_argument("--uaas_threshold", type=float, default=0.02, help="Uncertainty threshold u_threshold")
