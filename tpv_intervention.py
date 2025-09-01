@@ -22,6 +22,7 @@ def generate_with_intervention(
 ):
     """Generates tokens with intervention by hooking into the generation process."""
     inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
+    input_token_count = inputs.input_ids.size(-1)
     
     hook_handles = []
     
@@ -81,6 +82,15 @@ def generate_with_intervention(
                 pad_token_id=tokenizer.pad_token_id if tokenizer.pad_token_id is not None else tokenizer.eos_token_id
             )
         result = tokenizer.decode(outputs[0], skip_special_tokens=True)
+        # 统计 token 使用
+        total_token_count = outputs.size(-1)
+        new_token_count = max(0, total_token_count - input_token_count)
+        logging.info(
+            f"Token usage - prompt_tokens: {input_token_count}, "
+            f"generated_tokens: {new_token_count}, total_tokens: {total_token_count}"
+        )
+        if new_token_count >= max_new_tokens:
+            logging.warning(f"Output was truncated at {max_new_tokens} tokens.")
     finally:
         for handle in hook_handles:
             handle.remove()
