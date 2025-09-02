@@ -181,7 +181,7 @@ def main():
     problems = load_problems(args.dataset, args.problem_start_idx, args.problem_end_idx)
 
     for i, problem in enumerate(problems):
-        problem_num = i
+        problem_num = args.problem_start_idx+i
         logging.info(f"Processing problem {problem_num}...")
         
         problem_output_dir = os.path.join(generations_base_dir, f"problem_{problem_num}")

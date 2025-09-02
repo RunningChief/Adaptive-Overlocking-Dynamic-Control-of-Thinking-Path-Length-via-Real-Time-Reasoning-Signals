@@ -259,6 +259,7 @@ def big_model_worker(model, tokenizer, intervention_vector, args, generations_ba
             task_queue.put(None)
             break
         problem_num, problem, alpha = item
+        problem_num += args.problem_start_idx
         logging.info(f"[BigModel] Processing problem {problem_num}, alpha_base={alpha}")
 
         problem_output_dir = os.path.join(generations_base_dir, f"problem_{problem_num}")
