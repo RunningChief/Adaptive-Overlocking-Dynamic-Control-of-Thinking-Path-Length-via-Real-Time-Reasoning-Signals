@@ -204,9 +204,9 @@ def map_level_5_to_3(level_5: int) -> int:
         raise ValueError(f"未知 level_5: {level_5}")
 
 three_class_alpha = {
-    1: 100,  # relatively easy
-    2: 60,   # medium
-    3: 20    # relatively hard
+    1: 50,  # relatively easy
+    2: 30,   # medium
+    3: 10    # relatively hard
 }
 
 
@@ -287,7 +287,7 @@ def big_model_worker(model, tokenizer, intervention_vector, args, generations_ba
             )
             output_file_path = os.path.join(problem_output_dir, f"response_alpha_{alpha}.txt")
 
-        if new_token_count >= args.max_new_tokens:
+        if new_token_count >= args.max_new_tokens and not output.endswith(("<eos>", ".", "!", "?")):
             output = output.rstrip() + " <eos>"
             logging.warning(f"[BigModel] Output for problem {problem_num}, alpha_base={alpha} "
                             f"was truncated at {args.max_new_tokens} tokens.")
@@ -316,7 +316,7 @@ def main():
     parser.add_argument("--alpha", type=float, default=50, help="initial alpha")
 
     # UA-aS parameters
-    parser.add_argument("--enable_uaas", action="store_true", default=True,
+    parser.add_argument("--enable_uaas", action="store_true", default=False,
                         help="Enable Uncertainty-Aware adaptive Strength (UA-aS)")
     parser.add_argument("--alpha_max", type=float, default=200.0, help="Maximum alpha value for UA-aS")
     parser.add_argument("--uaas_k", type=float, default=100.0, help="Steepness parameter k for sigmoid function")
