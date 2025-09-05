@@ -92,11 +92,12 @@ def generate_with_uaas_intervention(
     max_new_tokens=1,
     intervention_vector=None,
     alpha_base=50.0,
-    alpha_max=100.0,
+    # alpha_max=100,
     k=10.0,
     u_threshold=0.5,
     enable_uaas=True
 ):
+    alpha_max = alpha_base + 20
     inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
     input_ids = inputs.input_ids
     input_token_count = input_ids.size(1)
@@ -272,7 +273,7 @@ def big_model_worker(model, tokenizer, intervention_vector, args, generations_ba
                 max_new_tokens=args.max_new_tokens,
                 intervention_vector=intervention_vector,
                 alpha_base=alpha,
-                alpha_max=args.alpha_max,
+                # alpha_max=args.alpha_max,
                 k=args.uaas_k,
                 u_threshold=args.uaas_threshold,
                 enable_uaas=True
@@ -287,7 +288,7 @@ def big_model_worker(model, tokenizer, intervention_vector, args, generations_ba
             )
             output_file_path = os.path.join(problem_output_dir, f"response_alpha_{alpha}.txt")
 
-        if new_token_count >= args.max_new_tokens and not output.endswith(("<eos>", ".", "!", "?")):
+        if new_token_count >= args.max_new_tokens:
             output = output.rstrip() + " <eos>"
             logging.warning(f"[BigModel] Output for problem {problem_num}, alpha_base={alpha} "
                             f"was truncated at {args.max_new_tokens} tokens.")

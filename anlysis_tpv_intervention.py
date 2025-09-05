@@ -19,6 +19,7 @@ import glob
 # 设置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+
 def find_closest_alpha_file(problem_dir: Path, target_alpha: float):
     """
     在 problem_dir 中查找与 target_alpha 最接近的 response_alpha 或 response_uaas_alpha_base_* 文件
@@ -48,6 +49,7 @@ def find_closest_alpha_file(problem_dir: Path, target_alpha: float):
                 continue
 
     return closest_file
+
 
 def extract_boxed_answer(text: str):
     """
@@ -80,18 +82,18 @@ def extract_boxed_answer(text: str):
 def load_ground_truth_answers(dataset_name: str, starting_index: int = None, end_index: int = None):
     """
     从Hugging Face数据集加载ground truth答案，参考utils.py的实现方式。
-    
+
     Args:
         dataset_name (str): 数据集名称 ('math500' 或 'gsm8k')
         starting_index (int): 起始索引
         end_index (int): 结束索引
-        
+
     Returns:
         tuple: (answers, problems) - 答案列表和问题列表
     """
     try:
         from datasets import load_dataset
-        
+
         if dataset_name == "math500":
             if starting_index is None:
                 starting_index = 30
@@ -101,8 +103,8 @@ def load_ground_truth_answers(dataset_name: str, starting_index: int = None, end
             test_data = dataset["test"]
             answers = test_data["answer"][starting_index:end_index]
             problems = test_data["problem"][starting_index:end_index]
-            logging.info(f"成功加载 {len(answers)} 个 math500 答案 (索引 {starting_index}-{end_index-1})")
-            
+            logging.info(f"成功加载 {len(answers)} 个 math500 答案 (索引 {starting_index}-{end_index - 1})")
+
         elif dataset_name == "gsm8k":
             if starting_index is None:
                 starting_index = 30
@@ -112,13 +114,13 @@ def load_ground_truth_answers(dataset_name: str, starting_index: int = None, end
             train_data = dataset["train"]
             answers = train_data["answer"][starting_index:end_index]
             problems = train_data["question"][starting_index:end_index]
-            logging.info(f"成功加载 {len(answers)} 个 gsm8k 答案 (索引 {starting_index}-{end_index-1})")
-            
+            logging.info(f"成功加载 {len(answers)} 个 gsm8k 答案 (索引 {starting_index}-{end_index - 1})")
+
         else:
             raise ValueError("不支持的数据集。请使用 'math500' 或 'gsm8k'。")
-            
+
         return answers, problems
-        
+
     except Exception as e:
         logging.error(f"加载数据集失败: {e}")
         return None, None
@@ -167,7 +169,6 @@ def is_generation_ended_naturally(response_text: str, box_info: tuple | None):
     return True
 
 
-
 def analyze_results(results_dir, dataset_name="math500", starting_index=None, end_index=None, alpha_value=100.0):
     """分析TPV intervention结果"""
 
@@ -180,7 +181,7 @@ def analyze_results(results_dir, dataset_name="math500", starting_index=None, en
     ground_truth_answers, ground_truth_problems = load_ground_truth_answers(
         dataset_name, starting_index, end_index
     )
-    
+
     if ground_truth_answers is None:
         logging.error("无法加载ground truth答案，正确性检查将无法进行。")
         return results
@@ -236,11 +237,11 @@ def analyze_results(results_dir, dataset_name="math500", starting_index=None, en
         is_correct = False
         gt_answer_extracted = None
         gt_problem_text = None
-        
+
         if ground_truth_answers and problem_num < len(ground_truth_answers):
             gt_text = ground_truth_answers[problem_num]
             gt_problem_text = ground_truth_problems[problem_num] if ground_truth_problems else None
-            
+
             # 注意：ground truth 可能没有box，所以用原始的 extract_boxed_answer 逻辑来提取其内容
             gt_box_info = extract_boxed_answer(str(gt_text))
             if gt_box_info:
@@ -257,14 +258,14 @@ def analyze_results(results_dir, dataset_name="math500", starting_index=None, en
             results['correct'] += 1
 
         results['details'].append({
-            'problem_num': problem_num, 
+            'problem_num': problem_num,
             'dataset_index': actual_dataset_index,
-            'has_answer': has_answer, 
+            'has_answer': has_answer,
             'model_answer': model_answer,
-            'is_correct': is_correct, 
+            'is_correct': is_correct,
             'ground_truth': gt_answer_extracted,
             'ground_truth_problem': gt_problem_text,
-            'ended_naturally': ended_naturally, 
+            'ended_naturally': ended_naturally,
             'response_length': len(response_text)
         })
 
@@ -314,7 +315,7 @@ def main():
     parser.add_argument("--results_dir", type=str,
                         default="deepseek_intervention_responses/DeepSeek-R1-Distill-Qwen-32B/math500/intervention",
                         help="结果目录路径")
-    parser.add_argument("--dataset", type=str, default="math500", 
+    parser.add_argument("--dataset", type=str, default="math500",
                         choices=["math500", "gsm8k"], help="数据集名称")
     parser.add_argument("--starting_index", type=int, default=80, help="数据集起始索引")
     parser.add_argument("--end_index", type=int, default=500, help="数据集结束索引")
