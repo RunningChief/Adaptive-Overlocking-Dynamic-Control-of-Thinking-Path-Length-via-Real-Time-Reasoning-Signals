@@ -19,7 +19,25 @@ import glob
 # 设置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-
+def extract_gsm8k_answer(text: str):
+    """
+    从GSM8K数据集中提取答案，GSM8K答案格式以'####'结尾并跟随答案
+    """
+    # 查找最后出现的'####'
+    last_hash_pos = text.rfind('####')
+    if last_hash_pos == -1:
+        return None
+    
+    # 提取'####'后面的内容作为答案
+    answer_start = last_hash_pos + 4  # 跳过'####'
+    answer_text = text[answer_start:].strip()
+    
+    # 移除可能的标点符号和空格
+    answer_text = re.sub(r'^[^\d]*', '', answer_text)  # 移除开头非数字字符
+    answer_text = re.sub(r'[^\d]*$', '', answer_text)  # 移除结尾非数字字符
+    
+    return answer_text if answer_text else None
+    
 def find_closest_alpha_file(problem_dir: Path, target_alpha: float):
     """
     在 problem_dir 中查找与 target_alpha 最接近的 response_alpha 或 response_uaas_alpha_base_* 文件
@@ -112,7 +130,9 @@ def load_ground_truth_answers(dataset_name: str, starting_index: int = None, end
                 end_index = 330
             dataset = load_dataset("openai/gsm8k", "main")
             train_data = dataset["train"]
-            answers = train_data["answer"][starting_index:end_index]
+            # 对于GSM8K，我们需要从完整答案中提取最终答案
+            raw_answers = train_data["answer"][starting_index:end_index]
+            answers = [extract_gsm8k_answer(ans) for ans in raw_answers]
             problems = train_data["question"][starting_index:end_index]
             logging.info(f"成功加载 {len(answers)} 个 gsm8k 答案 (索引 {starting_index}-{end_index - 1})")
 
@@ -315,10 +335,10 @@ def main():
     parser.add_argument("--results_dir", type=str,
                         default="deepseek_intervention_responses/DeepSeek-R1-Distill-Qwen-32B/math500/intervention",
                         help="结果目录路径")
-    parser.add_argument("--dataset", type=str, default="math500",
+    parser.add_argument("--dataset", type=str, default="gsm8k",
                         choices=["math500", "gsm8k"], help="数据集名称")
-    parser.add_argument("--starting_index", type=int, default=80, help="数据集起始索引")
-    parser.add_argument("--end_index", type=int, default=500, help="数据集结束索引")
+    parser.add_argument("--starting_index", type=int, default=30, help="数据集起始索引")
+    parser.add_argument("--end_index", type=int, default=330, help="数据集结束索引")
     parser.add_argument("--alpha", type=float, default=100.0, help="要分析的alpha值")
     parser.add_argument("--output_json", type=str, default="tpv_analysis_results.json", help="输出详细结果的JSON文件")
 
