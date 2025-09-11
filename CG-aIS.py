@@ -92,12 +92,12 @@ def generate_with_uaas_intervention(
     max_new_tokens=1,
     intervention_vector=None,
     alpha_base=50.0,
-    # alpha_max=100,
+    alpha_range=10,
     k=10.0,
     u_threshold=0.5,
     enable_uaas=True
 ):
-    alpha_max = alpha_base + 20
+    alpha_max = alpha_base + alpha_range
     inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
     input_ids = inputs.input_ids
     input_token_count = input_ids.size(1)
@@ -109,13 +109,38 @@ def generate_with_uaas_intervention(
     past_key_values = None
     model.eval()
 
+    # ---------------------------
+    # 修复点：提前注册 hook (保证第一个 token 也被干预)
+    # ---------------------------
+    hook_handles = []
+
+    def make_hook(alpha_val):
+        def forward_hook(module, input_args, output):
+            hidden_states_to_modify = output[0] if isinstance(output, tuple) else output
+            reshaped_vector = intervention_vector.view(1, 1, -1).to(hidden_states_to_modify.device)
+            modified_states = hidden_states_to_modify.clone()
+            modified_states[:, -1:, :] += reshaped_vector * alpha_val
+            return (modified_states,) + output[1:] if isinstance(output, tuple) else modified_states
+        return forward_hook
+
+    # 初始 alpha 就用 base (不依赖 uncertainty)
+    if enable_uaas and intervention_vector is not None:
+        forward_hook = make_hook(alpha_max)
+        hook_handles.append(model.model.norm.register_forward_hook(forward_hook))
+
+    # 第一次 forward (prompt 部分)
     with torch.no_grad():
         outputs = model(input_ids, use_cache=True, return_dict=True)
         logits = outputs.logits[:, -1, :]
         past_key_values = outputs.past_key_values
 
+    # 移除初始 hook（后面每步会用动态 alpha 重挂）
+    for h in hook_handles:
+        h.remove()
+    hook_handles.clear()
+
+    # 生成循环
     for step in range(max_new_tokens):
-        hook_handles = []
         current_alpha = alpha_base
 
         if enable_uaas and intervention_vector is not None:
@@ -144,15 +169,6 @@ def generate_with_uaas_intervention(
         if next_token_id.item() == tokenizer.eos_token_id:
             break
 
-        def make_hook(alpha_val):
-            def forward_hook(module, input_args, output):
-                hidden_states_to_modify = output[0] if isinstance(output, tuple) else output
-                reshaped_vector = intervention_vector.view(1, 1, -1).to(hidden_states_to_modify.device)
-                modified_states = hidden_states_to_modify.clone()
-                modified_states[:, -1:, :] += reshaped_vector * alpha_val
-                return (modified_states,) + output[1:] if isinstance(output, tuple) else modified_states
-            return forward_hook
-
         if intervention_vector is not None:
             forward_hook = make_hook(current_alpha)
             hook_handles.append(model.model.norm.register_forward_hook(forward_hook))
@@ -170,6 +186,7 @@ def generate_with_uaas_intervention(
         finally:
             for h in hook_handles:
                 h.remove()
+            hook_handles.clear()
 
     result = tokenizer.decode(input_ids[0], skip_special_tokens=True)
     new_token_count = len(generated_tokens)
@@ -266,14 +283,14 @@ def big_model_worker(model, tokenizer, intervention_vector, args, generations_ba
         problem_output_dir = os.path.join(generations_base_dir, f"problem_{problem_num}")
         os.makedirs(problem_output_dir, exist_ok=True)
         prompt = problem + "\nPlease reason step by step, and put your final answer within \\boxed{}.\n<think>\n"
-
+        # prompt = problem +  "\nPlease reason step by step, place your final answer inside \\boxed{}, and then immediately stop with < |end_of_sentence|>. Present all necessary calculations or arguments concisely, avoiding unnecessary elaboration or verbosity. \n<think>\n"
         if args.enable_uaas:
             output, new_token_count = generate_with_uaas_intervention(
                 model, tokenizer, prompt,
                 max_new_tokens=args.max_new_tokens,
                 intervention_vector=intervention_vector,
                 alpha_base=alpha,
-                # alpha_max=args.alpha_max,
+                alpha_range=args.range,
                 k=args.uaas_k,
                 u_threshold=args.uaas_threshold,
                 enable_uaas=True
@@ -319,7 +336,7 @@ def main():
     # UA-aS parameters
     parser.add_argument("--enable_uaas", action="store_true", default=False,
                         help="Enable Uncertainty-Aware adaptive Strength (UA-aS)")
-    parser.add_argument("--alpha_max", type=float, default=200.0, help="Maximum alpha value for UA-aS")
+    parser.add_argument("--range", type=float, default=10.0, help="Range for UA-aS")
     parser.add_argument("--uaas_k", type=float, default=100.0, help="Steepness parameter k for sigmoid function")
     parser.add_argument("--uaas_threshold", type=float, default=0.02, help="Uncertainty threshold u_threshold")
 
