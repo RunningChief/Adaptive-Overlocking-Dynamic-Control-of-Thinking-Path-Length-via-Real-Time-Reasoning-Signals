@@ -31,7 +31,12 @@ def load_problems(dataset, starting_index=None, end_index=None):
             end_index = 330
         problems = load_dataset("openai/gsm8k", "main")["train"]["question"][starting_index:end_index]
 
-    else:
-        raise ValueError("Unsupported dataset. Please use 'math500' or 'gsm8k'.")
+    elif dataset =="svamp":
+        if starting_index is None:
+            starting_index = 30
+        if end_index is None:
+            end_index = 330
+        problems = load_dataset("ChilleD/SVAMP", "default")["train"]["question_concat"][starting_index:end_index]
+
     
     return problems

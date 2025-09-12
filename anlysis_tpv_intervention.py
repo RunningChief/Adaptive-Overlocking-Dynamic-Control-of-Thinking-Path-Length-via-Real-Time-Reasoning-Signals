@@ -135,7 +135,18 @@ def load_ground_truth_answers(dataset_name: str, starting_index: int = None, end
             answers = [extract_gsm8k_answer(ans) for ans in raw_answers]
             problems = train_data["question"][starting_index:end_index]
             logging.info(f"成功加载 {len(answers)} 个 gsm8k 答案 (索引 {starting_index}-{end_index - 1})")
-
+        elif dataset_name == "sva":
+             # SVAMP数据集默认配置为'default'，列名：question_concat（问题）、answer（真值）
+            dataset = load_dataset("ChilleD/SVAMP", "default")
+            train_data = dataset["train"]  # SVAMP主要数据在'train' split
+            # 设置默认索引（覆盖数据集约1000个样本，可自定义）
+            if starting_index is None:
+                starting_index = 0
+            if end_index is None:
+                end_index = min(700, len(train_data))  # 避免超出数据集长度
+            # 提取原始答案和问题
+            answers = train_data["Answer"][starting_index:end_index]
+            problems = train_data["question_concat"][starting_index:end_index]
         else:
             raise ValueError("不支持的数据集。请使用 'math500' 或 'gsm8k'。")
 
@@ -336,7 +347,7 @@ def main():
                         default="deepseek_intervention_responses/DeepSeek-R1-Distill-Qwen-32B/math500/intervention",
                         help="结果目录路径")
     parser.add_argument("--dataset", type=str, default="gsm8k",
-                        choices=["math500", "gsm8k"], help="数据集名称")
+                        choices=["math500", "gsm8k","sva"], help="数据集名称")
     parser.add_argument("--starting_index", type=int, default=30, help="数据集起始索引")
     parser.add_argument("--end_index", type=int, default=330, help="数据集结束索引")
     parser.add_argument("--alpha", type=float, default=100.0, help="要分析的alpha值")
