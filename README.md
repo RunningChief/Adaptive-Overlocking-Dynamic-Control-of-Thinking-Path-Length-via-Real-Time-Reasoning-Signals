@@ -28,7 +28,7 @@ conda create -n adaptive-overclocking python=3.10
 conda activate adaptive-overclocking
 conda install pytorch==2.3.1 pytorch-cuda=12.1 -c pytorch -c nvidia
 pip install -r requirements.txt
-
+```
 ## 🔄 Workflow Overview
 The workflow consists of two main phases:
 
@@ -49,7 +49,7 @@ python generate_tpv_data.py \
   --start_problem_index 0 \
   --end_problem_index 80 \
   --output_dir "hidden_states_output"
-
+```
 **Step 2: Prepare Dataset**
 Process hidden states to build the regression dataset.
 ```bash
@@ -57,7 +57,7 @@ python prepare_tpv_dataset.py \
   --input_dir "hidden_states_output" \
   --output_dir "qwen_math_tpv_dataset" \
   --end_of_thinking_token "</think>"
-
+```
 **Step 3: Train TPV Regressor**
 Train the linear regression model to obtain the TPV vector (``tpv_linear_weights.npy``).
 ```bash
@@ -65,7 +65,7 @@ python train_tpv.py \
   --input_dir "qwen_math_tpv_dataset" \
   --output_dir "qwen_math_tpv_model" \
   --device "cuda"
-
+```
 ### Phase 2: HAC Intervention System (Inference)
 This is the core implementation of our paper. Use the hac.py script to run Hybrid Adaptive Control (HAC). This script launches a lightweight model (for difficulty assessment) and a large reasoning model (for solving problems) in parallel.
 ```bash
@@ -79,7 +79,7 @@ python hac.py \
   --range 40.0 \
   --uaas_k 20.0 \
   --uaas_threshold 0.015
-
+```
 **Arguments Explanation:**
 - ``--enable_uaas``: Enables Uncertainty-Aware Alpha Scheduling. If omitted, only static or complexity-based initialization is used.
 - ``--range``: The range of dynamic adjustment for UA-αS (i.e., $\alpha_{max} = \alpha_{base} + \text{range}$).
@@ -94,7 +94,7 @@ python tpv_intervention.py \
   --model_name_or_path "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B" \
   --intervention_vector_path "qwen_math_tpv_model/tpv_linear_weights.npy" \
   --alpha 100.0
-
+```
 ## 🔗 Citation
 ```bibtex
 @misc{eisenstadt2025overclockingllmreasoningmonitoring,
@@ -106,6 +106,7 @@ python tpv_intervention.py \
       primaryClass={cs.LG},
       url={https://arxiv.org/abs/2506.07240}, 
 }
+```
 We also acknowledge the foundational work on Thinking Progress Vectors:
 ```bibtex
 @misc{eisenstadt2025overclockingllmreasoningmonitoring,
@@ -114,5 +115,6 @@ We also acknowledge the foundational work on Thinking Progress Vectors:
       year={2025},
       eprint={2506.07240},
 }
+```
 ## License
 This repository is licensed under the [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) license.
